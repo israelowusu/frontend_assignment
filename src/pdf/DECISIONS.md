@@ -70,6 +70,18 @@ This is noted as a known limitation for the scope of this exercise.
 
 ---
 
+### 7. tldraw pointer event interception
+**Problem:** tldraw installs a capturing `pointerdown` listener on its entire container,
+including the `TopPanel`. This swallows clicks before they reach the browser's native
+file dialog, so a plain `<label>` or `<button>` click does nothing.
+
+**Fix:** The upload button calls `e.stopPropagation()` on `onPointerDown` to prevent
+tldraw from seeing the event. The file input is kept hidden and triggered
+programmatically via a `ref` + `inputRef.current.click()` from the button's `onClick`,
+which is more reliable than wrapping in a `<label>` inside a captured event context.
+
+---
+
 ## File Map
 
 | File | Purpose |
