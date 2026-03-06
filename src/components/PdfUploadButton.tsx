@@ -7,14 +7,7 @@ interface PdfUploadButtonProps {
   editor: Editor;
 }
 
-/**
- * PdfUploadButton — opens a native file picker and places the PDF as a
- * tldraw shape centred in the current viewport.
- *
- * The button is rendered outside the Tldraw DOM (as a sibling in App.tsx)
- * so tldraw's capturing pointer listeners never intercept the click and the
- * native file dialog opens normally.
- */
+// PdfUploadButton — opens a native file picker and places the PDF as a tldraw shape centred in the current viewport.
 export function PdfUploadButton({ editor }: PdfUploadButtonProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 

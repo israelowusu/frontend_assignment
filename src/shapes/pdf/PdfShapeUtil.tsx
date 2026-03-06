@@ -7,7 +7,7 @@ import {
 } from "tldraw";
 import { PdfViewer } from "@/pdf/PdfViewer";
 
-// ─── Shape type ────────────────────────────────────────────────────────────────
+// Shape type
 
 export type PdfShapeProps = {
   url: string;
@@ -18,7 +18,7 @@ export type PdfShapeProps = {
 
 export type PdfShape = TLBaseShape<"pdf", PdfShapeProps>;
 
-// ─── Shape util ────────────────────────────────────────────────────────────────
+// Shape util
 
 export class PdfShapeUtil extends BaseBoxShapeUtil<PdfShape> {
   static override type = "pdf" as const;
@@ -47,8 +47,7 @@ export class PdfShapeUtil extends BaseBoxShapeUtil<PdfShape> {
           borderRadius: 4,
           boxShadow: "0 2px 12px rgba(0,0,0,0.15)",
           background: "#fff",
-          // pointerEvents must be "all" so the scroll container inside
-          // can receive wheel and pointer events.
+          // pointerEvents must be "all" so the scroll container inside can receive wheel and pointer events.
           pointerEvents: "all",
         }}
       >
@@ -57,10 +56,7 @@ export class PdfShapeUtil extends BaseBoxShapeUtil<PdfShape> {
     );
   }
 
-  // Allow the shape to be moved by dragging its edges/border.
-  // We stop pointer events inside the content area (PdfViewer) so that
-  // scrolling works, but tldraw still needs to be able to drag the shape
-  // when the user grabs it via the selection handles or border.
+  // Allow the shape to be moved by dragging its edges/border, not just the interior.
   override hideSelectionBoundsBg = () => false;
 
   override indicator(shape: PdfShape) {

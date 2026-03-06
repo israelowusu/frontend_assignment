@@ -5,14 +5,12 @@ import {
   atom,
 } from "tldraw";
 
-// ─── Shared reactive atom ─────────────────────────────────────────────────────
+// Shared reactive atom
 // Lives outside the class so CameraBox can import and subscribe to it directly.
-// This is the correct tldraw pattern for sharing reactive state between a
-// StateNode and a React component.
 
 export const cameraBoxAtom = atom<Box | null>("camera-box", null);
 
-// ─── Idle state ───────────────────────────────────────────────────────────────
+// Idle state
 
 class CameraIdle extends StateNode {
   static override id = "idle";
@@ -37,7 +35,7 @@ class CameraIdle extends StateNode {
   }
 }
 
-// ─── Dragging state ───────────────────────────────────────────────────────────
+// Dragging state
 
 export class CameraDragging extends StateNode {
   static override id = "dragging";
@@ -79,9 +77,7 @@ export class CameraDragging extends StateNode {
   }
 
   private async exportRegion(box: Box) {
-    // Find only shapes that intersect the crop box — passing all shapes with
-    // a bounds clip produces a blank image because toImage renders shapes at
-    // their page positions, making content appear outside the clipped region.
+    // Find only shapes that intersect the crop box
     const shapeIds = this.editor
       .getCurrentPageShapes()
       .filter((shape) => {
@@ -92,8 +88,7 @@ export class CameraDragging extends StateNode {
 
     if (shapeIds.length === 0) return;
 
-    // Do NOT pass bounds — let tldraw fit the selected shapes naturally.
-    // This produces a correctly cropped image centred on the captured shapes.
+    // Let tldraw fit the selected shapes naturally
     const { blob } = await this.editor.toImage(shapeIds, {
       format: "png",
       background: true,
@@ -110,7 +105,7 @@ export class CameraDragging extends StateNode {
   }
 }
 
-// ─── Camera tool root ─────────────────────────────────────────────────────────
+// Camera tool root
 
 export class CameraTool extends StateNode {
   static override id = "camera";

@@ -2,26 +2,19 @@ import * as pdfjsLib from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 
 // Initialise the worker inline so this file is self-contained.
-// Any file that imports from pdfUtils will automatically have the worker ready.
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
   import.meta.url
 ).toString();
 
-// Suppress pdfjs font-substitution warnings — these fire when a PDF uses a
-// system font (e.g. Arial Italic) that pdfjs can't find in the browser
-// environment. pdfjs falls back to a built-in substitute automatically, so
-// the warning is noise. All other console.warn calls pass through unchanged.
+// Suppress pdfjs font-substitution warnings
 const _warn = console.warn.bind(console);
 console.warn = (...args: unknown[]) => {
   if (typeof args[0] === "string" && args[0].startsWith("Cannot load system font:")) return;
   _warn(...args);
 };
 
-/**
- * Load a PDF from a URL or ArrayBuffer and return the document proxy.
- * All heavy parsing happens inside the pdfjs web worker — never on the main thread.
- */
+// Load a PDF from a URL or ArrayBuffer and return the document proxy.
 export async function loadPdf(
   source: string | ArrayBuffer
 ): Promise<PDFDocumentProxy> {
@@ -58,10 +51,7 @@ export async function renderPageToCanvas(
   await page.render({ canvasContext: ctx, viewport }).promise;
 }
 
-/**
- * Return the logical (CSS) dimensions of a page at a given scale.
- * Useful for computing the bounding box of the tldraw shape before rendering.
- */
+// Return the logical (CSS) dimensions of a page at a given scale.
 export function getPageDimensions(
   page: PDFPageProxy,
   scale = 1

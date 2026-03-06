@@ -19,13 +19,13 @@ import { CameraTool } from "@/tools/camera/CameraTool";
 import { CameraBox } from "@/tools/camera/CameraBox";
 import { PdfUploadButton } from "@/components/PdfUploadButton";
 
-// ─── Registration ─────────────────────────────────────────────────────────────
+// Registration of custom shapes, bindings, and tools — this is how tldraw knows about our PDF and Pin features.
 
 const customShapeUtils = [PdfShapeUtil, PinShapeUtil];
 const customBindingUtils = [PinBindingUtil];
 const customTools = [PinTool, CameraTool];
 
-// ─── Asset URLs ───────────────────────────────────────────────────────────────
+// Asset URLs — this is how we tell tldraw where to find the icons for our custom tools.
 
 const customAssetUrls: TLUiAssetUrlOverrides = {
   icons: {
@@ -34,7 +34,7 @@ const customAssetUrls: TLUiAssetUrlOverrides = {
   },
 };
 
-// ─── UI overrides ─────────────────────────────────────────────────────────────
+// UI overrides — this is how we add the camera and pin tools to the toolbar.
 
 const uiOverrides: TLUiOverrides = {
   tools(editor, tools) {
@@ -56,7 +56,7 @@ const uiOverrides: TLUiOverrides = {
   },
 };
 
-// ─── Custom toolbar ───────────────────────────────────────────────────────────
+// Custom toolbar to show our new tools
 
 function CustomToolbar() {
   const tools = useTools();
@@ -71,14 +71,14 @@ function CustomToolbar() {
   );
 }
 
-// ─── Components ───────────────────────────────────────────────────────────────
+// Components 
 
 const uiComponents: TLComponents = {
   Toolbar: CustomToolbar,
   InFrontOfTheCanvas: CameraBox,
 };
 
-// ─── App ─────────────────────────────────────────────────────────────────────
+// App component — renders the Tldraw editor and the PDF upload button
 
 export default function App() {
   const [editor, setEditor] = useState<Editor | null>(null);

@@ -1,13 +1,7 @@
 import { useEditor, useValue } from "tldraw";
 import { cameraBoxAtom } from "./CameraTool";
 
-/**
- * CameraBox renders the live crop rectangle while the camera tool is dragging.
- * Sits in the InFrontOfTheCanvas slot — above shapes, below UI chrome.
- *
- * Subscribes to cameraBoxAtom (a tldraw atom) so it re-renders reactively
- * on every pointer move with zero overhead.
- */
+// CameraBox renders the live crop rectangle while the camera tool is dragging.
 export function CameraBox() {
   const editor = useEditor();
 
@@ -17,8 +11,7 @@ export function CameraBox() {
       const box = cameraBoxAtom.get();
       if (!box || box.width === 0 || box.height === 0) return null;
 
-      // Convert page coords → screen (viewport) coords so the overlay
-      // aligns with the canvas at any zoom level
+      // Convert page coords - screen (viewport) coords so the overlay aligns with the canvas at any zoom level
       const tl = editor.pageToViewport({ x: box.x, y: box.y });
       const br = editor.pageToViewport({ x: box.x + box.w, y: box.y + box.h });
 

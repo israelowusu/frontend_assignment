@@ -8,18 +8,7 @@ interface PdfViewerProps {
   containerWidth: number;
 }
 
-/**
- * PdfViewer — scrollable multi-page PDF viewer inside a tldraw HTMLContainer.
- *
- * The key challenge: tldraw installs capturing wheel and pointer listeners on
- * its canvas element that intercept scroll events before they reach the PDF
- * scroll container, causing the canvas to pan/zoom instead of the PDF scrolling.
- *
- * Fix: attach a non-passive wheel listener directly on the scroll div that
- * calls stopPropagation() before tldraw's listener sees it, then manually
- * drives scrollTop. This keeps canvas pan/zoom when the user scrolls outside
- * the PDF, and scrolls pages when they scroll inside it.
- */
+// PdfViewer — scrollable multi-page PDF viewer inside a tldraw HTMLContainer.
 export function PdfViewer({ url, containerWidth }: PdfViewerProps) {
   const [pages, setPages] = useState<PDFPageProxy[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -55,9 +44,6 @@ export function PdfViewer({ url, containerWidth }: PdfViewerProps) {
   }, [url]);
 
   // Intercept wheel events before tldraw's capturing listener sees them.
-  // Must be a non-passive listener attached via addEventListener so we can
-  // call stopPropagation() — React's onWheel is passive by default in React 17+
-  // and cannot stop propagation to tldraw's capturing handler anyway.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -109,13 +95,10 @@ export function PdfViewer({ url, containerWidth }: PdfViewerProps) {
         padding: 8,
         boxSizing: "border-box",
         background: "#e5e7eb",
-        // Prevent tldraw from treating this as a drag target when the user
-        // clicks inside the PDF — without this, mousedown inside the viewer
-        // starts a canvas selection drag.
+        // Prevent tldraw from treating this as a drag target when the user clicks inside the PDF
         cursor: "default",
       }}
-      // Do NOT stop pointer propagation here — tldraw needs to see pointer
-      // events to select the shape so that Delete/Backspace can remove it.
+      // tldraw needs to see pointer events to select the shape so that Delete/Backspace can remove it.
     >
       {pages.map((page, index) => (
         <PdfPage

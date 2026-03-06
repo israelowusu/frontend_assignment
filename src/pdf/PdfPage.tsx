@@ -7,13 +7,7 @@ interface PdfPageProps {
   width: number; // logical width to fit the page into (in CSS px)
 }
 
-/**
- * PdfPage renders a single PDF page lazily.
- *
- * Rendering is deferred until the element is visible in the viewport
- * using an IntersectionObserver. This means a 100-page PDF only renders
- * the pages the user can actually see, keeping memory and GPU usage low.
- */
+// PdfPage renders a single PDF page lazily. It starts rendering when it comes close to the viewport, and shows a placeholder before that.
 export function PdfPage({ page, width }: PdfPageProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isVisible, setIsVisible] = useState(false);
@@ -24,7 +18,7 @@ export function PdfPage({ page, width }: PdfPageProps) {
   const aspectRatio = viewport.height / viewport.width;
   const height = width * aspectRatio;
 
-  // Step 1: Observe visibility
+  // Observe visibility
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -43,7 +37,7 @@ export function PdfPage({ page, width }: PdfPageProps) {
     return () => observer.disconnect();
   }, []);
 
-  // Step 2: Render once visible
+  // Render once visible
   useEffect(() => {
     if (!isVisible || isRendered) return;
     const canvas = canvasRef.current;

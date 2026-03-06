@@ -25,7 +25,7 @@ const PIN_HEIGHT = 40;
 const OFFSET_X = -PIN_WIDTH / 2;
 const OFFSET_Y = -PIN_HEIGHT;
 
-// ─── Type declarations ────────────────────────────────────────────────────────
+// Type declarations
 
 declare module "tldraw" {
   export interface TLGlobalShapePropsMap {
@@ -42,7 +42,7 @@ declare module "tldraw" {
 export type PinShape = TLBaseShape<typeof PIN_TYPE, Record<string, never>>;
 export type PinBinding = TLBaseBinding<typeof PIN_TYPE, { anchor: VecModel }>;
 
-// ─── PinShapeUtil ─────────────────────────────────────────────────────────────
+// PinShapeUtil 
 
 export class PinShapeUtil extends ShapeUtil<PinShape> {
   static override type = PIN_TYPE;
@@ -90,7 +90,7 @@ export class PinShapeUtil extends ShapeUtil<PinShape> {
   }
 }
 
-// ─── PinBindingUtil ───────────────────────────────────────────────────────────
+// PinBindingUtil
 
 export class PinBindingUtil extends BindingUtil<PinBinding> {
   static override type = PIN_TYPE;
@@ -104,91 +104,65 @@ export class PinBindingUtil extends BindingUtil<PinBinding> {
   }
 }
 
-// ─── Pin side-effect registration ─────────────────────────────────────────────
-// Uses registerAfterChangeHandler('shape', ...) which runs AFTER the store flush,
-// making it safe to call updateShapes without causing infinite loops.
+// Pin side-effect registration 
+//
+// registerBeforeChangeHandler intercepts each record update before it is written to the store.
 
 export function registerPinSideEffects(editor: Editor) {
-  // Phase 1: collect moves during the flush (no store writes allowed here)
-  const pendingMoves = new Map<TLShapeId, { dx: number; dy: number }>();
+  const processing = new Set<TLShapeId>();
 
-  const unsubChange = editor.sideEffects.registerAfterChangeHandler(
+  const unsub = editor.sideEffects.registerBeforeChangeHandler(
     "shape",
-    (prev: TLUnknownShape, next: TLUnknownShape) => {
+    (prev: TLUnknownShape, next: TLUnknownShape): TLUnknownShape => {
+      // Skip shapes we are already adjusting to prevent re-entrancy
+      if (processing.has(next.id)) return next;
+
       const dx = next.x - prev.x;
       const dy = next.y - prev.y;
-      if (dx === 0 && dy === 0) return;
+      if (dx === 0 && dy === 0) return next;
 
-      // Only track shapes that have pin bindings
+      // Only act on shapes that have at least one pin binding
       const pinBindings = editor.getBindingsToShape<PinBinding>(next, PIN_TYPE);
-      if (pinBindings.length === 0) return;
+      if (pinBindings.length === 0) return next;
 
-      const existing = pendingMoves.get(next.id);
-      if (existing) {
-        existing.dx += dx;
-        existing.dy += dy;
-      } else {
-        pendingMoves.set(next.id, { dx, dy });
+      // Mark this shape so sibling callbacks skip it
+      processing.add(next.id);
+
+      try {
+        for (const pb of pinBindings) {
+          const pin = editor.getShape<PinShape>(pb.fromId);
+          if (!pin || processing.has(pin.id)) continue;
+
+          processing.add(pin.id);
+
+          // Move the pin by the same delta as the shape it is bound to
+          editor.store.put([{ ...pin, x: pin.x + dx, y: pin.y + dy }]);
+
+          // Move all sibling shapes attached to this pin
+          const siblings = editor
+            .getBindingsFromShape<PinBinding>(pin, PIN_TYPE)
+            .filter((b) => b.toId !== next.id);
+
+          for (const sb of siblings) {
+            const sib = editor.getShape(sb.toId);
+            if (!sib || processing.has(sib.id)) continue;
+
+            processing.add(sib.id);
+            editor.store.put([{ ...sib, x: sib.x + dx, y: sib.y + dy }]);
+          }
+        }
+      } finally {
+        processing.clear();
       }
+
+      return next;
     }
   );
 
-  // Phase 2: apply moves after the entire operation batch settles
-  const unsubComplete = editor.sideEffects.registerOperationCompleteHandler(() => {
-    if (pendingMoves.size === 0) return;
-
-    const moves = new Map(pendingMoves);
-    pendingMoves.clear();
-
-    const shapesToUpdate: { id: TLShapeId; type: string; x: number; y: number }[] = [];
-    const seen = new Set<TLShapeId>();
-
-    for (const [movedId, { dx, dy }] of moves) {
-      const movedShape = editor.getShape(movedId);
-      if (!movedShape) continue;
-
-      const pinBindings = editor.getBindingsToShape<PinBinding>(movedShape, PIN_TYPE);
-      for (const pb of pinBindings) {
-        const pin = editor.getShape<PinShape>(pb.fromId);
-        if (!pin || seen.has(pin.id)) continue;
-        seen.add(pin.id);
-
-        shapesToUpdate.push({ id: pin.id, type: PIN_TYPE, x: pin.x + dx, y: pin.y + dy });
-
-        const siblings = editor
-          .getBindingsFromShape<PinBinding>(pin, PIN_TYPE)
-          .filter((b) => b.toId !== movedId);
-
-        for (const sb of siblings) {
-          if (seen.has(sb.toId)) continue;
-          seen.add(sb.toId);
-          const sib = editor.getShape(sb.toId);
-          if (!sib) continue;
-          shapesToUpdate.push({ id: sib.id, type: sib.type, x: sib.x + dx, y: sib.y + dy });
-        }
-      }
-    }
-
-    if (shapesToUpdate.length === 0) return;
-
-    // Defer to the next animation frame so we are fully outside the store's
-    // flushAtomicCallbacks loop. Any write attempted during that loop —
-    // even with sideEffects disabled — increments the depth counter and
-    // eventually throws. rAF runs after the current flush has completely
-    // exited, making it safe to call updateShapes with no depth risk.
-    requestAnimationFrame(() => {
-      editor.updateShapes(shapesToUpdate);
-    });
-  });
-
-  return () => {
-    unsubChange();
-    unsubComplete();
-  };
+  return unsub;
 }
 
-// ─── PinTool ──────────────────────────────────────────────────────────────────
-
+// PinTool
 export class PinTool extends StateNode {
   static override id = PIN_TYPE;
 
