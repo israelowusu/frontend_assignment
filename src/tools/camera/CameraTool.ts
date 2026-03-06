@@ -2,7 +2,6 @@ import {
   Box,
   StateNode,
   TLKeyboardEventInfo,
-  TLPointerEventInfo,
   atom,
 } from "tldraw";
 
@@ -33,8 +32,8 @@ class CameraIdle extends StateNode {
     }
   }
 
-  override onPointerDown(_info: TLPointerEventInfo) {
-    this.parent.transition("dragging", _info);
+  override onPointerDown() {
+    this.parent.transition("dragging");
   }
 }
 

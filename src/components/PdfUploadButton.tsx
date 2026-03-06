@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import type { Editor } from "tldraw";
 import { loadPdf, getPageDimensions } from "@/pdf/pdfUtils";
-import type { ChangeEvent, PointerEvent } from "react";
+import type { ChangeEvent } from "react";
 
 interface PdfUploadButtonProps {
   editor: Editor;
@@ -11,20 +11,12 @@ interface PdfUploadButtonProps {
  * PdfUploadButton — opens a native file picker and places the PDF as a
  * tldraw shape centred in the current viewport.
  *
- * WHY onPointerDown + stopPropagation:
- * tldraw installs a capturing pointer-event listener on its container that
- * intercepts ALL pointer events to manage tool state. This swallows the click
- * before it can trigger the native file dialog on a <label> or <button>.
- * Calling stopPropagation on pointerDown prevents tldraw from seeing the event
- * so the browser can handle it normally and open the file picker.
+ * The button is rendered outside the Tldraw DOM (as a sibling in App.tsx)
+ * so tldraw's capturing pointer listeners never intercept the click and the
+ * native file dialog opens normally.
  */
 export function PdfUploadButton({ editor }: PdfUploadButtonProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-
-  function handlePointerDown(e: PointerEvent<HTMLButtonElement>) {
-    // Stop tldraw's capturing listener from swallowing this event
-    e.stopPropagation();
-  }
 
   function handleClick() {
     inputRef.current?.click();
@@ -45,12 +37,14 @@ export function PdfUploadButton({ editor }: PdfUploadButtonProps) {
       const shapeW = 600;
       const shapeH = height * scale * doc.numPages + (doc.numPages - 1) * 8;
 
-      const { x, y } = editor.getViewportPageCenter();
+      const bounds = editor.getViewportPageBounds();
+      const cx = bounds.x + bounds.w / 2;
+      const cy = bounds.y + bounds.h / 2;
 
       editor.createShape({
         type: "pdf",
-        x: x - shapeW / 2,
-        y: y - shapeH / 2,
+        x: cx - shapeW / 2,
+        y: cy - Math.min(shapeH, 800) / 2,
         props: {
           url,
           pageCount: doc.numPages,
@@ -77,7 +71,6 @@ export function PdfUploadButton({ editor }: PdfUploadButtonProps) {
       />
 
       <button
-        onPointerDown={handlePointerDown}
         onClick={handleClick}
         style={{
           display: "inline-flex",
