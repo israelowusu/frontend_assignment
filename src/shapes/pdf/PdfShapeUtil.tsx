@@ -10,10 +10,10 @@ import { PdfViewer } from "@/pdf/PdfViewer";
 // ─── Shape type ────────────────────────────────────────────────────────────────
 
 export type PdfShapeProps = {
-  url: string;       // URL (or object URL) of the PDF to display
-  pageCount: number; // cached so tldraw doesn't need to re-parse to know bounds
-  w: number;         // logical width of the shape in canvas units
-  h: number;         // logical height of the shape in canvas units
+  url: string;
+  pageCount: number;
+  w: number;
+  h: number;
 };
 
 export type PdfShape = TLBaseShape<"pdf", PdfShapeProps>;
@@ -31,18 +31,11 @@ export class PdfShapeUtil extends BaseBoxShapeUtil<PdfShape> {
   };
 
   override getDefaultProps(): PdfShapeProps {
-    return {
-      url: "",
-      pageCount: 0,
-      w: 600,
-      h: 800,
-    };
+    return { url: "", pageCount: 0, w: 600, h: 800 };
   }
 
-  // Allow the shape to be resized by the user
   override canResize = () => true;
 
-  // Render the HTML content of the shape
   override component(shape: PdfShape) {
     return (
       <HTMLContainer
@@ -62,7 +55,6 @@ export class PdfShapeUtil extends BaseBoxShapeUtil<PdfShape> {
     );
   }
 
-  // Minimal selection indicator — just an outline
   override indicator(shape: PdfShape) {
     return (
       <rect

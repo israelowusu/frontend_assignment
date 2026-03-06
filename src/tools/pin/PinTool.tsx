@@ -1,5 +1,4 @@
 import {
-  BindingOnShapeChangeOptions,
   BindingOnShapeDeleteOptions,
   BindingUtil,
   Box,
@@ -7,21 +6,17 @@ import {
   Rectangle2d,
   ShapeUtil,
   StateNode,
-  TLBinding,
+  TLBaseBinding,
+  TLBaseShape,
   TLKeyboardEventInfo,
-  TLPointerEventInfo,
-  TLShape,
   TLShapeId,
-  TLShapePartial,
   TLShapeUtilCanBindOpts,
-  Vec,
-  VecModel,
+  TLUnknownShape,
+  createBindingId,
   createShapeId,
   invLerp,
-  lerp,
 } from "tldraw";
-
-// ─── Constants ────────────────────────────────────────────────────────────────
+import type { Editor, VecModel } from "tldraw";
 
 export const PIN_TYPE = "pin" as const;
 
@@ -43,8 +38,9 @@ declare module "tldraw" {
   }
 }
 
-export type PinShape = TLShape<typeof PIN_TYPE>;
-export type PinBinding = TLBinding<typeof PIN_TYPE>;
+// Use TLBaseShape/TLBaseBinding — TLShape and TLBinding are non-generic union types
+export type PinShape = TLBaseShape<typeof PIN_TYPE, Record<string, never>>;
+export type PinBinding = TLBaseBinding<typeof PIN_TYPE, { anchor: VecModel }>;
 
 // ─── PinShapeUtil ─────────────────────────────────────────────────────────────
 
@@ -52,21 +48,17 @@ export class PinShapeUtil extends ShapeUtil<PinShape> {
   static override type = PIN_TYPE;
   static override props: RecordProps<PinShape> = {};
 
-  override getDefaultProps() {
-    return {};
-  }
-
-  override canBind({ toShape, bindingType }: TLShapeUtilCanBindOpts<PinShape>) {
-    if (!toShape) return false;
-    if (bindingType === PIN_TYPE) return toShape.type !== PIN_TYPE;
-    return true;
-  }
-
+  override getDefaultProps() { return {}; }
   override canEdit() { return false; }
   override canResize() { return false; }
   override canSnap() { return false; }
   override hideRotateHandle() { return true; }
   override isAspectRatioLocked() { return true; }
+
+  override canBind({ toShapeType, bindingType }: TLShapeUtilCanBindOpts<PinShape>) {
+    if (bindingType === PIN_TYPE) return toShapeType !== PIN_TYPE;
+    return true;
+  }
 
   override getGeometry() {
     return new Rectangle2d({
@@ -94,60 +86,7 @@ export class PinShapeUtil extends ShapeUtil<PinShape> {
   }
 
   override indicator() {
-    return (
-      <rect width={PIN_WIDTH} height={PIN_HEIGHT} x={OFFSET_X} y={OFFSET_Y} rx={4} fill="none" />
-    );
-  }
-
-  override onTranslateStart(shape: PinShape) {
-    // Remove old bindings when dragging starts so pin can be freely moved
-    const bindings = this.editor.getBindingsFromShape(shape, PIN_TYPE);
-    this.editor.deleteBindings(bindings);
-  }
-
-  override onTranslateEnd(_initial: PinShape, pin: PinShape) {
-    // Re-fetch from store — the passed argument may be a stale snapshot
-    const freshPin = this.editor.getShape<PinShape>(pin.id);
-    if (!freshPin) return;
-
-    const pageAnchor = this.editor
-      .getShapePageTransform(freshPin.id)
-      .applyToPoint({ x: 0, y: 0 });
-
-    const targets = this.editor
-      .getShapesAtPoint(pageAnchor, { hitInside: true })
-      .filter(
-        (shape) =>
-          this.editor.canBindShapes({
-            fromShape: freshPin,
-            toShape: shape,
-            binding: PIN_TYPE,
-          }) &&
-          shape.parentId === freshPin.parentId &&
-          shape.index < freshPin.index
-      );
-
-    for (const target of targets) {
-      const targetBounds = Box.ZeroFix(
-        this.editor.getShapeGeometry(target).bounds
-      );
-      const pointInTargetSpace = this.editor.getPointInShapeSpace(
-        target,
-        pageAnchor
-      );
-
-      const anchor = {
-        x: invLerp(targetBounds.minX, targetBounds.maxX, pointInTargetSpace.x),
-        y: invLerp(targetBounds.minY, targetBounds.maxY, pointInTargetSpace.y),
-      };
-
-      this.editor.createBinding({
-        type: PIN_TYPE,
-        fromId: freshPin.id,
-        toId: target.id,
-        props: { anchor },
-      });
-    }
+    return <rect width={PIN_WIDTH} height={PIN_HEIGHT} x={OFFSET_X} y={OFFSET_Y} rx={4} fill="none" />;
   }
 }
 
@@ -160,130 +99,60 @@ export class PinBindingUtil extends BindingUtil<PinBinding> {
     return { anchor: { x: 0.5, y: 0.5 } };
   }
 
-  private changedToShapes = new Set<TLShapeId>();
-
-  override onOperationComplete(): void {
-    if (this.changedToShapes.size === 0) return;
-
-    const fixedShapes = new Set(this.changedToShapes);
-    const toCheck = [...this.changedToShapes];
-
-    const initialPositions = new Map<TLShapeId, VecModel>();
-    const targetDeltas = new Map<TLShapeId, Map<TLShapeId, VecModel>>();
-
-    const addTargetDelta = (fromId: TLShapeId, toId: TLShapeId, delta: VecModel) => {
-      if (!targetDeltas.has(fromId)) targetDeltas.set(fromId, new Map());
-      targetDeltas.get(fromId)!.set(toId, delta);
-      if (!targetDeltas.has(toId)) targetDeltas.set(toId, new Map());
-      targetDeltas.get(toId)!.set(fromId, { x: -delta.x, y: -delta.y });
-    };
-
-    const allShapes = new Set<TLShapeId>();
-
-    while (toCheck.length) {
-      const shapeId = toCheck.pop()!;
-      const shape = this.editor.getShape(shapeId);
-      if (!shape || allShapes.has(shapeId)) continue;
-      allShapes.add(shapeId);
-
-      const bindings = this.editor.getBindingsToShape<PinBinding>(shape, PIN_TYPE);
-      for (const binding of bindings) {
-        if (allShapes.has(binding.fromId)) continue;
-        allShapes.add(binding.fromId);
-
-        const pin = this.editor.getShape<PinShape>(binding.fromId);
-        if (!pin) continue;
-
-        const pinPosition = this.editor
-          .getShapePageTransform(pin.id)
-          .applyToPoint({ x: 0, y: 0 });
-        initialPositions.set(pin.id, pinPosition);
-
-        for (const b of this.editor.getBindingsFromShape<PinBinding>(pin.id, PIN_TYPE)) {
-          const shapeBounds = this.editor.getShapeGeometry(b.toId)!.bounds;
-          const shapeAnchor = {
-            x: lerp(shapeBounds.minX, shapeBounds.maxX, b.props.anchor.x),
-            y: lerp(shapeBounds.minY, shapeBounds.maxY, b.props.anchor.y),
-          };
-          const currentPageAnchor = this.editor
-            .getShapePageTransform(b.toId)
-            .applyToPoint(shapeAnchor);
-          const shapeOrigin = this.editor
-            .getShapePageTransform(b.toId)
-            .applyToPoint({ x: 0, y: 0 });
-
-          initialPositions.set(b.toId, shapeOrigin);
-          addTargetDelta(pin.id, b.toId, {
-            x: currentPageAnchor.x - shapeOrigin.x,
-            y: currentPageAnchor.y - shapeOrigin.y,
-          });
-
-          if (!allShapes.has(b.toId)) toCheck.push(b.toId);
-        }
-      }
-    }
-
-    const currentPositions = new Map(initialPositions);
-
-    for (let i = 0; i < 30; i++) {
-      const movements = new Map<TLShapeId, VecModel[]>();
-      for (const [aId, deltas] of targetDeltas) {
-        if (fixedShapes.has(aId)) continue;
-        const aPosition = currentPositions.get(aId)!;
-        for (const [bId, targetDelta] of deltas) {
-          const bPosition = currentPositions.get(bId)!;
-          const adjustmentDelta = {
-            x: targetDelta.x - (aPosition.x - bPosition.x),
-            y: targetDelta.y - (aPosition.y - bPosition.y),
-          };
-          if (!movements.has(aId)) movements.set(aId, []);
-          movements.get(aId)!.push(adjustmentDelta);
-        }
-      }
-
-      for (const [shapeId, deltas] of movements) {
-        const currentPosition = currentPositions.get(shapeId)!;
-        currentPositions.set(shapeId, Vec.Average(deltas).add(currentPosition));
-      }
-    }
-
-    const updates: TLShapePartial[] = [];
-    for (const [shapeId, position] of currentPositions) {
-      const delta = Vec.Sub(position, initialPositions.get(shapeId)!);
-      if (delta.len2() <= 0.01) continue;
-      const newPosition = this.editor.getPointInParentSpace(shapeId, position);
-      updates.push({
-        ...this.editor.getShape(shapeId)!,
-        id: shapeId,
-        x: newPosition.x,
-        y: newPosition.y,
-      });
-    }
-
-    if (updates.length === 0) {
-      this.changedToShapes.clear();
-    } else {
-      this.editor.updateShapes(updates);
-    }
-  }
-
-  override onAfterChangeToShape({
-    binding,
-    shapeAfter,
-  }: BindingOnShapeChangeOptions<PinBinding>): void {
-    this.changedToShapes.add(binding.toId);
-    const pin = this.editor.getShape(binding.fromId);
-    if (!pin) return;
-    if (pin.parentId !== shapeAfter.parentId) {
-      this.editor.reparentShapes([pin.id], shapeAfter.parentId);
-    }
-  }
-
-  override onBeforeDeleteToShape({
-    binding,
-  }: BindingOnShapeDeleteOptions<PinBinding>): void {
+  override onBeforeDeleteToShape({ binding }: BindingOnShapeDeleteOptions<PinBinding>): void {
     this.editor.deleteShape(binding.fromId);
   }
+}
+
+// ─── Pin side-effect registration ─────────────────────────────────────────────
+// Uses registerAfterChangeHandler('shape', ...) which runs AFTER the store flush,
+// making it safe to call updateShapes without causing infinite loops.
+
+export function registerPinSideEffects(editor: Editor) {
+  const movingShapeIds = new Set<TLShapeId>();
+
+  return editor.sideEffects.registerAfterChangeHandler(
+    "shape",
+    (prev: TLUnknownShape, next: TLUnknownShape) => {
+      if (movingShapeIds.has(next.id)) return;
+
+      const dx = next.x - prev.x;
+      const dy = next.y - prev.y;
+      if (dx === 0 && dy === 0) return;
+
+      const pinBindings = editor.getBindingsToShape<PinBinding>(next, PIN_TYPE);
+      if (pinBindings.length === 0) return;
+
+      const shapesToMove: { id: TLShapeId; type: string; x: number; y: number }[] = [];
+      const seen = new Set<TLShapeId>([next.id]);
+
+      for (const pb of pinBindings) {
+        const pin = editor.getShape<PinShape>(pb.fromId);
+        if (!pin || seen.has(pin.id)) continue;
+        seen.add(pin.id);
+
+        shapesToMove.push({ id: pin.id, type: PIN_TYPE, x: pin.x + dx, y: pin.y + dy });
+
+        const siblings = editor
+          .getBindingsFromShape<PinBinding>(pin, PIN_TYPE)
+          .filter((b) => b.toId !== next.id);
+
+        for (const sb of siblings) {
+          if (seen.has(sb.toId)) continue;
+          seen.add(sb.toId);
+          const sib = editor.getShape(sb.toId);
+          if (!sib) continue;
+          shapesToMove.push({ id: sib.id, type: sib.type, x: sib.x + dx, y: sib.y + dy });
+        }
+      }
+
+      if (shapesToMove.length === 0) return;
+
+      for (const s of shapesToMove) movingShapeIds.add(s.id);
+      editor.updateShapes(shapesToMove);
+      for (const s of shapesToMove) movingShapeIds.delete(s.id);
+    }
+  );
 }
 
 // ─── PinTool ──────────────────────────────────────────────────────────────────
@@ -305,7 +174,7 @@ export class PinTool extends StateNode {
     }
   }
 
-  override onPointerUp(_info: TLPointerEventInfo) {
+  override onPointerUp() {
     const { currentPagePoint } = this.editor.inputs;
     const pinId = createShapeId();
 
@@ -317,10 +186,7 @@ export class PinTool extends StateNode {
       y: currentPagePoint.y,
     });
 
-    // Bind immediately after creation — replaces the onTranslateEnd logic
-    // since we're no longer using select.translating
     this.bindPinToShapesAtPoint(pinId, currentPagePoint);
-
     this.editor.setSelectedShapes([pinId]);
     this.editor.setCurrentTool("select");
   }
@@ -332,35 +198,28 @@ export class PinTool extends StateNode {
     const pin = this.editor.getShape<PinShape>(pinId);
     if (!pin) return;
 
-    const allAtPoint = this.editor.getShapesAtPoint(pagePoint, { hitInside: true });
-
-    const targets = allAtPoint.filter((shape) => {
-        // Exclude the pin itself and other pins
-        if (shape.id === pinId) return false;
-        if (shape.type === PIN_TYPE) return false;
-        // Only bind to shapes on the same page level
-        if (shape.parentId !== pin.parentId) return false;
-        return true;
-      }
-    );
+    const targets = this.editor
+      .getShapesAtPoint(pagePoint, { hitInside: true })
+      .filter(
+        (shape) =>
+          shape.id !== pinId &&
+          shape.type !== PIN_TYPE &&
+          shape.parentId === pin.parentId
+      );
 
     if (targets.length < 2) return;
 
     for (const target of targets) {
-      const targetBounds = Box.ZeroFix(
-        this.editor.getShapeGeometry(target).bounds
-      );
-      const pointInTargetSpace = this.editor.getPointInShapeSpace(
-        target,
-        pagePoint
-      );
+      const targetBounds = Box.ZeroFix(this.editor.getShapeGeometry(target).bounds);
+      const pointInTargetSpace = this.editor.getPointInShapeSpace(target, pagePoint);
 
       const anchor = {
         x: invLerp(targetBounds.minX, targetBounds.maxX, pointInTargetSpace.x),
         y: invLerp(targetBounds.minY, targetBounds.maxY, pointInTargetSpace.y),
       };
 
-      this.editor.createBinding({
+      this.editor.createBinding<PinBinding>({
+        id: createBindingId(),
         type: PIN_TYPE,
         fromId: pinId,
         toId: target.id,

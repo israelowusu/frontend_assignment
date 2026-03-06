@@ -80,12 +80,23 @@ export class CameraDragging extends StateNode {
   }
 
   private async exportRegion(box: Box) {
-    const shapeIds = [...this.editor.getCurrentPageShapeIds()];
+    // Find only shapes that intersect the crop box — passing all shapes with
+    // a bounds clip produces a blank image because toImage renders shapes at
+    // their page positions, making content appear outside the clipped region.
+    const shapeIds = this.editor
+      .getCurrentPageShapes()
+      .filter((shape) => {
+        const shapeBounds = this.editor.getShapePageBounds(shape);
+        return shapeBounds ? box.collides(shapeBounds) : false;
+      })
+      .map((s) => s.id);
+
     if (shapeIds.length === 0) return;
 
+    // Do NOT pass bounds — let tldraw fit the selected shapes naturally.
+    // This produces a correctly cropped image centred on the captured shapes.
     const { blob } = await this.editor.toImage(shapeIds, {
       format: "png",
-      bounds: box,
       background: true,
       padding: 0,
       scale: 2,

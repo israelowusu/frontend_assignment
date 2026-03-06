@@ -15,7 +15,7 @@ import type { Editor } from "tldraw";
 import type { ChangeEvent } from "react";
 
 import { PdfShapeUtil } from "@/shapes/pdf/PdfShapeUtil";
-import { PinShapeUtil, PinBindingUtil, PinTool } from "@/tools/pin/PinTool";
+import { PinShapeUtil, PinBindingUtil, PinTool, registerPinSideEffects } from "@/tools/pin/PinTool";
 import { CameraTool } from "@/tools/camera/CameraTool";
 import { CameraBox } from "@/tools/camera/CameraBox";
 import { loadPdf, getPageDimensions } from "@/pdf/pdfUtils";
@@ -135,6 +135,7 @@ export default function App() {
         onMount={(ed) => {
           setEditor(ed);
           (window as any).editor = ed;
+          registerPinSideEffects(ed);
         }}
       />
 
