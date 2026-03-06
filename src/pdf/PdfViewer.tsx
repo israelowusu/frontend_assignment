@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import { loadPdf } from "@/pdf/pdfUtils";
 import { PdfPage } from "@/pdf/PdfPage";
@@ -9,16 +9,22 @@ interface PdfViewerProps {
 }
 
 /**
- * PdfViewer is the scrollable container that shows all pages of a PDF.
+ * PdfViewer — scrollable multi-page PDF viewer inside a tldraw HTMLContainer.
  *
- * It loads the document once (keyed on url), extracts all page proxies,
- * and renders them stacked vertically. Each PdfPage handles its own
- * lazy rendering via IntersectionObserver.
+ * The key challenge: tldraw installs capturing wheel and pointer listeners on
+ * its canvas element that intercept scroll events before they reach the PDF
+ * scroll container, causing the canvas to pan/zoom instead of the PDF scrolling.
+ *
+ * Fix: attach a non-passive wheel listener directly on the scroll div that
+ * calls stopPropagation() before tldraw's listener sees it, then manually
+ * drives scrollTop. This keeps canvas pan/zoom when the user scrolls outside
+ * the PDF, and scrolls pages when they scroll inside it.
  */
 export function PdfViewer({ url, containerWidth }: PdfViewerProps) {
   const [pages, setPages] = useState<PDFPageProxy[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!url) return;
@@ -30,13 +36,9 @@ export function PdfViewer({ url, containerWidth }: PdfViewerProps) {
     loadPdf(url)
       .then(async (doc: PDFDocumentProxy) => {
         if (cancelled) return;
-
-        // Extract all page proxies upfront so we know total page count.
-        // The actual pixel rendering is still deferred per-page.
         const pageProxies = await Promise.all(
           Array.from({ length: doc.numPages }, (_, i) => doc.getPage(i + 1))
         );
-
         if (!cancelled) {
           setPages(pageProxies);
           setLoading(false);
@@ -49,24 +51,33 @@ export function PdfViewer({ url, containerWidth }: PdfViewerProps) {
         }
       });
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [url]);
+
+  // Intercept wheel events before tldraw's capturing listener sees them.
+  // Must be a non-passive listener attached via addEventListener so we can
+  // call stopPropagation() — React's onWheel is passive by default in React 17+
+  // and cannot stop propagation to tldraw's capturing handler anyway.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.stopPropagation();
+      el.scrollTop += e.deltaY;
+    };
+
+    el.addEventListener("wheel", handleWheel, { passive: true });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, [pages]); // re-attach after pages load so ref is populated
 
   if (loading) {
     return (
-      <div
-        style={{
-          width: containerWidth,
-          height: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#888",
-          fontSize: 14,
-        }}
-      >
+      <div style={{
+        width: containerWidth, height: "100%",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        color: "#888", fontSize: 14,
+      }}>
         Loading PDF…
       </div>
     );
@@ -74,19 +85,11 @@ export function PdfViewer({ url, containerWidth }: PdfViewerProps) {
 
   if (error) {
     return (
-      <div
-        style={{
-          width: containerWidth,
-          height: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#e53e3e",
-          fontSize: 14,
-          padding: 16,
-          textAlign: "center",
-        }}
-      >
+      <div style={{
+        width: containerWidth, height: "100%",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        color: "#e53e3e", fontSize: 14, padding: 16, textAlign: "center",
+      }}>
         {error}
       </div>
     );
@@ -94,10 +97,11 @@ export function PdfViewer({ url, containerWidth }: PdfViewerProps) {
 
   return (
     <div
+      ref={scrollRef}
       style={{
         width: containerWidth,
         height: "100%",
-        overflowY: "auto",
+        overflowY: "scroll",
         overflowX: "hidden",
         display: "flex",
         flexDirection: "column",
@@ -105,13 +109,19 @@ export function PdfViewer({ url, containerWidth }: PdfViewerProps) {
         padding: 8,
         boxSizing: "border-box",
         background: "#e5e7eb",
+        // Prevent tldraw from treating this as a drag target when the user
+        // clicks inside the PDF — without this, mousedown inside the viewer
+        // starts a canvas selection drag.
+        cursor: "default",
       }}
+      // Do NOT stop pointer propagation here — tldraw needs to see pointer
+      // events to select the shape so that Delete/Backspace can remove it.
     >
       {pages.map((page, index) => (
         <PdfPage
           key={index}
           page={page}
-          width={containerWidth - 16} // account for horizontal padding
+          width={containerWidth - 16}
         />
       ))}
     </div>

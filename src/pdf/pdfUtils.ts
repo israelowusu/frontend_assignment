@@ -8,6 +8,16 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString();
 
+// Suppress pdfjs font-substitution warnings — these fire when a PDF uses a
+// system font (e.g. Arial Italic) that pdfjs can't find in the browser
+// environment. pdfjs falls back to a built-in substitute automatically, so
+// the warning is noise. All other console.warn calls pass through unchanged.
+const _warn = console.warn.bind(console);
+console.warn = (...args: unknown[]) => {
+  if (typeof args[0] === "string" && args[0].startsWith("Cannot load system font:")) return;
+  _warn(...args);
+};
+
 /**
  * Load a PDF from a URL or ArrayBuffer and return the document proxy.
  * All heavy parsing happens inside the pdfjs web worker — never on the main thread.
